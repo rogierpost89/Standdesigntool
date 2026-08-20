@@ -289,6 +289,16 @@
   const PERSON_H = 172;       // gemiddelde persoonshoogte
   const PERSON_HEAD_R = 11;
   const PERSON_SHOULDER_W = 46;
+  const PERSON_SKIN = '#d8a374';
+  const PERSON_STAFF_JACKET = '#1c2530';
+  const PERSON_STAFF_PANTS = '#111417';
+  const PERSON_VISITOR_PALETTE = ['#3d5a80', '#556b2f', '#7c2d3a', '#5c5346'];
+  const PERSON_VISITOR_PANTS = '#34495e';
+  function personColors(p){
+    if(p.role === 'staff') return { jacket: PERSON_STAFF_JACKET, pants: PERSON_STAFF_PANTS, skin: PERSON_SKIN };
+    const jacket = PERSON_VISITOR_PALETTE[p.idx % PERSON_VISITOR_PALETTE.length];
+    return { jacket, pants: PERSON_VISITOR_PANTS, skin: PERSON_SKIN };
+  }
   const PAD = 40; // px padding around stand in stage
 
   /* ---------- DOM refs ---------- */
@@ -389,6 +399,7 @@
     [0.32, 0.68].forEach(f=>{
       people.push({ x: stand.w*f, y: stand.d + 55, role: 'visitor' });
     });
+    people.forEach((p, idx)=>{ p.idx = idx; });
     return people;
   }
 
@@ -698,17 +709,37 @@
 
   function drawPersonFront(root, p, baseline, fScale){
     const cx = p.x*fScale;
-    const color = p.role === 'staff' ? '#2c3e50' : '#7a8ba0';
+    const { jacket, pants, skin } = personColors(p);
+    const isStaff = p.role === 'staff';
     const headR = PERSON_HEAD_R*fScale;
     const shoulderW = PERSON_SHOULDER_W*fScale;
     const bodyH = (PERSON_H - PERSON_HEAD_R*2)*fScale;
+    const legH = bodyH*0.46;
+    const torsoH = bodyH - legH;
     const headCy = baseline - PERSON_H*fScale + headR;
-    root.appendChild(el('circle',{cx, cy:headCy, r:headR, fill:color}));
-    const bodyTop = headCy+headR;
+    const torsoTop = headCy+headR;
+    const torsoBottom = torsoTop + torsoH;
+
+    // legs (drawn first so the jacket overlaps their tops)
+    const legW = shoulderW*0.16;
+    const legGap = shoulderW*0.06;
+    root.appendChild(el('rect',{x:cx-legGap-legW, y:torsoBottom, width:legW, height:legH, fill:pants}));
+    root.appendChild(el('rect',{x:cx+legGap, y:torsoBottom, width:legW, height:legH, fill:pants}));
+
+    // torso (jacket), tapered shoulders-to-waist silhouette
     root.appendChild(el('path',{
-      d:`M ${cx-shoulderW*0.32} ${baseline} L ${cx-shoulderW/2} ${bodyTop} Q ${cx} ${bodyTop-headR*0.3} ${cx+shoulderW/2} ${bodyTop} L ${cx+shoulderW*0.32} ${baseline} Z`,
-      fill:color
+      d:`M ${cx-shoulderW*0.30} ${torsoBottom} L ${cx-shoulderW/2} ${torsoTop} Q ${cx} ${torsoTop-headR*0.3} ${cx+shoulderW/2} ${torsoTop} L ${cx+shoulderW*0.30} ${torsoBottom} Z`,
+      fill:jacket
     }));
+
+    // head
+    root.appendChild(el('circle',{cx, cy:headCy, r:headR, fill:skin}));
+
+    // staff: flat cap silhouette on top of the head
+    if(isStaff){
+      root.appendChild(el('rect',{x:cx-headR*0.95, y:headCy-headR*1.15, width:headR*1.9, height:headR*0.55, rx:headR*0.15, fill:jacket}));
+      root.appendChild(el('rect',{x:cx-headR*0.15, y:headCy-headR*0.75, width:headR*1.15, height:headR*0.28, fill:jacket}));
+    }
   }
 
   function drawFrontPanel(root, x, y, w, h, zone, canTexture, fallbackLabel){
@@ -1006,25 +1037,71 @@
     });
   }
 
-  // Simple, schematic low-poly person: sphere head + capsule/cylinder body,
-  // at real scale (~172cm). Staff (dark navy) face into the stand/publiek;
-  // visitors (soft grey-blue) face the bar. Real THREE.Group + rotation, so
-  // it automatically works with the orbit camera - no special-casing needed.
+  // Stoere silhouet-stijl person: separate head/torso/legs/arms so staff
+  // read as "uniform" (dark jacket + cap) and visitors as casual (varied
+  // jacket colors), at real scale (~172cm). Staff face into the stand/
+  // publiek; visitors face the bar. Real THREE.Group + rotation, so it
+  // automatically works with the orbit camera - no special-casing needed.
   function buildPerson3D(p){
     const group = new THREE.Group();
-    const color = p.role === 'staff' ? 0x2c3e50 : 0x7a8ba0;
-    const mat = new THREE.MeshLambertMaterial({ color });
+    const isStaff = p.role === 'staff';
+    const { jacket, pants, skin } = personColors(p);
+    const jacketMat = new THREE.MeshLambertMaterial({ color: jacket });
+    const pantsMat = new THREE.MeshLambertMaterial({ color: pants });
+    const skinMat = new THREE.MeshLambertMaterial({ color: skin });
+
     const headR = PERSON_HEAD_R;
+    const shoulderW = PERSON_SHOULDER_W;
     const bodyH = PERSON_H - headR*2;
-    const bodyGeo = (THREE.CapsuleGeometry)
-      ? new THREE.CapsuleGeometry(PERSON_SHOULDER_W/2*0.62, bodyH*0.72, 4, 8)
-      : new THREE.CylinderGeometry(PERSON_SHOULDER_W/2*0.62, PERSON_SHOULDER_W/2*0.42, bodyH, 10);
-    const body = new THREE.Mesh(bodyGeo, mat);
-    body.position.y = bodyH/2;
-    group.add(body);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(headR, 12, 10), mat);
+    const legH = bodyH*0.46;
+    const torsoH = bodyH - legH;
+
+    // legs
+    const legW = shoulderW*0.26, legGap = shoulderW*0.08;
+    [-1, 1].forEach(side=>{
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(legW, legH, legW*0.85), pantsMat);
+      leg.position.set(side*(legGap+legW/2), legH/2, 0);
+      group.add(leg);
+    });
+
+    // torso (tapered box: wider at shoulders, narrower at waist)
+    const torsoGeo = new THREE.BoxGeometry(shoulderW*0.62, torsoH, shoulderW*0.34);
+    const posAttr = torsoGeo.attributes.position;
+    for(let i=0;i<posAttr.count;i++){
+      if(posAttr.getY(i) < 0){ // waist edge (bottom of box) pulled in
+        posAttr.setX(i, posAttr.getX(i)*0.72);
+        posAttr.setZ(i, posAttr.getZ(i)*0.85);
+      }
+    }
+    posAttr.needsUpdate = true;
+    torsoGeo.computeVertexNormals();
+    const torso = new THREE.Mesh(torsoGeo, jacketMat);
+    torso.position.y = legH + torsoH/2;
+    group.add(torso);
+
+    // arms
+    const armR = shoulderW*0.09;
+    [-1, 1].forEach(side=>{
+      const arm = new THREE.Mesh(new THREE.CylinderGeometry(armR, armR*0.85, torsoH*0.9, 8), jacketMat);
+      arm.position.set(side*(shoulderW*0.62/2 + armR*0.9), legH + torsoH*0.52, 0);
+      group.add(arm);
+    });
+
+    // head
+    const head = new THREE.Mesh(new THREE.SphereGeometry(headR, 12, 10), skinMat);
     head.position.y = bodyH + headR;
     group.add(head);
+
+    // staff: flat cap
+    if(isStaff){
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(headR*0.95, headR*1.02, headR*0.55, 12), jacketMat);
+      cap.position.y = bodyH + headR*1.75;
+      group.add(cap);
+      const visor = new THREE.Mesh(new THREE.BoxGeometry(headR*1.1, headR*0.12, headR*0.7), jacketMat);
+      visor.position.set(0, bodyH + headR*1.5, headR*0.7);
+      group.add(visor);
+    }
+
     group.position.set(p.x - stand.w/2, 0, p.y - stand.d/2);
     group.rotation.y = (p.role === 'staff' ? 0 : Math.PI); // face the direction matching the 2D views
     return group;
