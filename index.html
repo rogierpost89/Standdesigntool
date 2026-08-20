@@ -1559,6 +1559,42 @@
     img.src = url;
   });
 
+  // Lazy-loads ffmpeg.wasm (only when a video export is actually requested)
+  // so the recorded WebM can be transcoded to H.264 MP4 client-side, since
+  // WebM doesn't play on iOS/Safari and MediaRecorder can't encode MP4
+  // directly in Chrome/Firefox. Uses the single-thread @ffmpeg/core build,
+  // which (unlike the -mt build) doesn't need SharedArrayBuffer or
+  // cross-origin-isolation headers, so it works on a plain static host.
+  let ffmpegInstance = null;
+  function loadScript(src){
+    return new Promise((resolve, reject)=>{
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = ()=>reject(new Error('kon '+src+' niet laden'));
+      document.head.appendChild(s);
+    });
+  }
+  async function getFFmpeg(){
+    if(ffmpegInstance) return ffmpegInstance;
+    if(typeof FFmpegWASM === 'undefined'){
+      await loadScript('https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js');
+    }
+    if(typeof FFmpegUtil === 'undefined'){
+      await loadScript('https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js');
+    }
+    const ffmpeg = new FFmpegWASM.FFmpeg();
+    const coreBase = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+    const pkgBase = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd';
+    await ffmpeg.load({
+      coreURL: await FFmpegUtil.toBlobURL(`${coreBase}/ffmpeg-core.js`, 'text/javascript'),
+      wasmURL: await FFmpegUtil.toBlobURL(`${coreBase}/ffmpeg-core.wasm`, 'application/wasm'),
+      classWorkerURL: await FFmpegUtil.toBlobURL(`${pkgBase}/814.ffmpeg.js`, 'text/javascript'),
+    });
+    ffmpegInstance = ffmpeg;
+    return ffmpeg;
+  }
+
   document.getElementById('btnExportVideo').addEventListener('click', async ()=>{
     if(!three) return;
     const canvas = three.renderer.domElement;
@@ -1597,14 +1633,30 @@
     requestAnimationFrame(frame);
 
     await finished;
-    const blob = new Blob(chunks, {type:'video/webm'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'standtekening-3d.webm';
-    a.click();
+    const webmBlob = new Blob(chunks, {type:'video/webm'});
 
     three.setAzimuth(startTheta);
     selectedId = wasSelected; updateThreeScene();
+
+    let outBlob = webmBlob, outName = 'standtekening-3d.webm';
+    try{
+      btn.textContent = 'Video verwerken…';
+      const ffmpeg = await getFFmpeg();
+      await ffmpeg.writeFile('in.webm', await FFmpegUtil.fetchFile(webmBlob));
+      await ffmpeg.exec(['-i','in.webm','-c:v','libx264','-pix_fmt','yuv420p','-movflags','+faststart','out.mp4']);
+      const data = await ffmpeg.readFile('out.mp4');
+      await ffmpeg.deleteFile('in.webm'); await ffmpeg.deleteFile('out.mp4');
+      outBlob = new Blob([data.buffer], {type:'video/mp4'});
+      outName = 'standtekening-3d.mp4';
+    }catch(err){
+      console.warn('MP4-conversie mislukt, val terug op WebM-download:', err);
+    }
+
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(outBlob);
+    a.download = outName;
+    a.click();
+
     btn.disabled = false;
     btn.textContent = originalText;
   });
