@@ -209,6 +209,7 @@
       <button class="btn" id="btnLoad">Laden</button>
       <input type="file" id="fileLoad" accept="application/json">
       <button class="btn primary" id="btnExport">Exporteer PNG</button>
+      <button class="btn" id="btnExportVideo" style="display:none">Exporteer video</button>
     </div>
   </header>
 
@@ -262,6 +263,7 @@
   const BACKBAR_D = 30;      // backbar depth
   const BACKBAR_GAP_MIN = 80; // minimum werkruimte tussen frontbar en backbar
   const BACKBAR_H = 210;     // backbar front height
+  const BBTOP_H = 45;        // topbanner bovenop de backbar
   const BANNER_POLE_H = 100; // hoogte stokken boven de bar
   const BANNER_H = 50;       // hoogte van de banner zelf
   const BANNER_W_RATIO = 0.9; // banner iets smaller dan de bar
@@ -415,6 +417,7 @@
       currentView = btn.dataset.view;
       document.querySelectorAll('.view-tabs button').forEach(b=>b.classList.toggle('active', b===btn));
       document.getElementById('viewCaption').textContent = CAPTIONS[currentView];
+      document.getElementById('btnExportVideo').style.display = currentView==='iso' ? 'inline-flex' : 'none';
       render();
     });
   });
@@ -521,6 +524,10 @@
         const badge = frontBadge(bx, by, 'BB', bar.bbfront.img, bw);
         g.appendChild(badge);
       }
+      if(bar.bbTop.on){
+        const badge = frontBadge(bx+bw-24, by, 'TB', bar.bbTop.img, 22);
+        g.appendChild(badge);
+      }
 
       // werkruimte gap indicator
       const gy = by + bh;
@@ -616,7 +623,7 @@
   }
 
   function barFrontHeight(bar){
-    const backH = bar.backbar ? BACKBAR_H : 0;
+    const backH = bar.backbar ? BACKBAR_H + BBTOP_H : 0;
     const bannerH = bar.banner ? COUNTER_H + BANNER_POLE_H + BANNER_H : COUNTER_H;
     return Math.max(backH, bannerH);
   }
@@ -660,6 +667,8 @@
         const bh = BACKBAR_H*fScale;
         const by0 = baseline - bh;
         drawFrontPanel(root, x0, by0, ew, bh, bar.bbfront, canTexture, `${bar.count}× backbar`);
+        const tbh = BBTOP_H*fScale;
+        drawFrontPanel(root, x0, by0-tbh, ew, tbh, bar.bbTop, canTexture, 'topbanner backbar');
       }
       const chh = COUNTER_H*fScale;
       const cy0 = baseline - chh;
@@ -777,7 +786,7 @@
 
   function initThree(){
     if(three || typeof THREE === 'undefined') return;
-    const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false });
+    const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false, preserveDrawingBuffer:true });
     renderer.setClearColor(0xffffff, 1);
     stage3d.appendChild(renderer.domElement);
 
@@ -905,7 +914,9 @@
     new ResizeObserver(resize).observe(stage3d);
 
     three = { renderer, scene, camera, barsGroup, floorGroup, peopleGroup, applyCamera, requestRender, resize, target,
-      setRadius:(r)=>{ radius=r; applyCamera(); } };
+      setRadius:(r)=>{ radius=r; applyCamera(); },
+      getAzimuth:()=>theta,
+      setAzimuth:(t)=>{ theta=t; applyCamera(); } };
     resize();
   }
 
@@ -974,7 +985,16 @@
       bbMesh.position.set(0, BACKBAR_H/2, bbFrontV - BACKBAR_D/2);
       addEdges(bbMesh);
       group.add(bbMesh);
-      maxH = Math.max(maxH, BACKBAR_H);
+
+      const bbTopGeo = new THREE.BoxGeometry(bar.w, BBTOP_H, BACKBAR_D);
+      const bbTopMesh = new THREE.Mesh(bbTopGeo, boxMaterials({
+        frontImg: bar.bbTop.img, frontOn: bar.bbTop.on,
+        baseColor: 0xffffff
+      }));
+      bbTopMesh.position.set(0, BACKBAR_H + BBTOP_H/2, bbFrontV - BACKBAR_D/2);
+      addEdges(bbTopMesh);
+      group.add(bbTopMesh);
+      maxH = Math.max(maxH, BACKBAR_H + BBTOP_H);
     }
 
     if(bar.banner){
@@ -1199,6 +1219,7 @@
       front: {on:false, img:null},
       sideZone: {on:false, img:null},
       bbfront: {on:false, img:null},
+      bbTop: {on:false, img:null},
       bannerZone: {on:false, img:null}
     };
     clampCenter(bar);
@@ -1302,6 +1323,24 @@
     selectBar(null);
   });
 
+  // Arrow keys nudge the selected bar (5cm step, 20cm with Shift). Ignored
+  // while typing in an input/textarea so it doesn't hijack normal editing.
+  document.addEventListener('keydown', (e)=>{
+    if(!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) return;
+    const tag = document.activeElement && document.activeElement.tagName;
+    if(tag === 'INPUT' || tag === 'TEXTAREA') return;
+    const bar = bars.find(b=>b.id===selectedId);
+    if(!bar) return;
+    e.preventDefault();
+    const step = e.shiftKey ? 20 : 5;
+    if(e.key === 'ArrowLeft') bar.cx -= step;
+    if(e.key === 'ArrowRight') bar.cx += step;
+    if(e.key === 'ArrowUp') bar.cy -= step;
+    if(e.key === 'ArrowDown') bar.cy += step;
+    clampCenter(bar);
+    render();
+  });
+
   /* ---------- detail panel ---------- */
   function renderDetail(){
     const bar = bars.find(b=>b.id===selectedId);
@@ -1311,7 +1350,7 @@
     }
     detailBody.innerHTML = `
       <div class="subttl">${bar.count} bar${bar.count>1?'s':''}${bar.backbar? ' met backbar':''}${bar.banner? ' + bovenbanner':''}</div>
-      <div class="meta">${(bar.w/100).toFixed(1)} m breed · ${COUNTER_D} cm diep · ${COUNTER_H} cm hoog${bar.backbar? ` · ${gapOf(bar)} cm werkruimte · backbar ${BACKBAR_D} cm diep, ${BACKBAR_H} cm hoog`:''}${bar.banner? ` · banner op ${BANNER_POLE_H} cm boven de bar, ${BANNER_H} cm hoog`:''}</div>
+      <div class="meta">${(bar.w/100).toFixed(1)} m breed · ${COUNTER_D} cm diep · ${COUNTER_H} cm hoog${bar.backbar? ` · ${gapOf(bar)} cm werkruimte · backbar ${BACKBAR_D} cm diep, ${BACKBAR_H} cm hoog + ${BBTOP_H} cm topbanner`:''}${bar.banner? ` · banner op ${BANNER_POLE_H} cm boven de bar, ${BANNER_H} cm hoog`:''}</div>
 
       <div class="zone" data-zone="front">
         <div class="zh">
@@ -1354,6 +1393,20 @@
           <button class="btn" id="btnClearBB">Wissen</button>
         </div>
         <input type="file" id="fileBB" accept="image/*">
+      </div>
+
+      <div class="zone" data-zone="bbTop">
+        <div class="zh">
+          <label><input type="checkbox" id="chkBBTop" ${bar.bbTop.on?'checked':''}> Topbanner backbar bedrukbaar</label>
+        </div>
+        <div class="zprev" id="prevBBTop" style="--ar:${(bar.w/BBTOP_H).toFixed(2)}">
+          ${bar.bbTop.img? `<img src="${bar.bbTop.img}">` : `<span class="ph">${(bar.w/100).toFixed(1)} × ${(BBTOP_H/100).toFixed(2)} m</span>`}
+        </div>
+        <div class="zctrls">
+          <button class="btn" id="btnUploadBBTop">Afbeelding uploaden</button>
+          <button class="btn" id="btnClearBBTop">Wissen</button>
+        </div>
+        <input type="file" id="fileBBTop" accept="image/*">
       </div>` : ''}
 
       ${bar.banner ? `
@@ -1375,6 +1428,7 @@
     wireZone('front', bar);
     wireZone('sideZone', bar);
     if(bar.backbar) wireZone('bbfront', bar);
+    if(bar.backbar) wireZone('bbTop', bar);
     if(bar.banner) wireZone('bannerZone', bar);
   }
 
@@ -1382,6 +1436,7 @@
     const map = {front:{chk:'chkFront',file:'fileFront',btn:'btnUploadFront',clr:'btnClearFront'},
                  sideZone:{chk:'chkSide',file:'fileSide',btn:'btnUploadSide',clr:'btnClearSide'},
                  bbfront:{chk:'chkBB',file:'fileBB',btn:'btnUploadBB',clr:'btnClearBB'},
+                 bbTop:{chk:'chkBBTop',file:'fileBBTop',btn:'btnUploadBBTop',clr:'btnClearBBTop'},
                  bannerZone:{chk:'chkBanner',file:'fileBanner',btn:'btnUploadBanner',clr:'btnClearBanner'}};
     const ids = map[key];
     const chk = document.getElementById(ids.chk);
@@ -1449,6 +1504,8 @@
           if(b.banner == null) b.banner = false;
           if(!b.bannerZone) b.bannerZone = {on:false, img:null};
           if(!b.sideZone) b.sideZone = {on:false, img:null};
+          if(!b.bbfront) b.bbfront = {on:false, img:null};
+          if(!b.bbTop) b.bbTop = {on:false, img:null};
         });
         idSeq = bars.reduce((m,b)=>Math.max(m,b.id+1), 1);
         standWInput.value = (stand.w/100).toFixed(2);
@@ -1500,6 +1557,56 @@
       selectedId = wasSelected; render();
     };
     img.src = url;
+  });
+
+  document.getElementById('btnExportVideo').addEventListener('click', async ()=>{
+    if(!three) return;
+    const canvas = three.renderer.domElement;
+    if(typeof MediaRecorder === 'undefined' || !canvas.captureStream){
+      alert('Video-export wordt niet ondersteund in deze browser.');
+      return;
+    }
+    const btn = document.getElementById('btnExportVideo');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Opnemen…';
+
+    const wasSelected = selectedId;
+    selectedId = null; updateThreeScene();
+
+    const startTheta = three.getAzimuth();
+    const duration = 6000; // ms for one full rotation
+    const fps = 30;
+    const stream = canvas.captureStream(fps);
+    const mimeType = ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm']
+      .find(t=>MediaRecorder.isTypeSupported(t)) || 'video/webm';
+    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 6000000 });
+    const chunks = [];
+    recorder.ondataavailable = e=>{ if(e.data.size) chunks.push(e.data); };
+    const finished = new Promise(resolve=>{ recorder.onstop = resolve; });
+    recorder.start();
+
+    const t0 = performance.now();
+    function frame(now){
+      const progress = Math.min((now - t0)/duration, 1);
+      three.setAzimuth(startTheta + progress*Math.PI*2);
+      three.renderer.render(three.scene, three.camera);
+      if(progress < 1) requestAnimationFrame(frame);
+      else recorder.stop();
+    }
+    requestAnimationFrame(frame);
+
+    await finished;
+    const blob = new Blob(chunks, {type:'video/webm'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'standtekening-3d.webm';
+    a.click();
+
+    three.setAzimuth(startTheta);
+    selectedId = wasSelected; updateThreeScene();
+    btn.disabled = false;
+    btn.textContent = originalText;
   });
 
   window.addEventListener('resize', render);
