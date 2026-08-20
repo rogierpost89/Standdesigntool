@@ -1,0 +1,1436 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Standtekening Tool — Bar Verhuur</title>
+<style>
+  :root{
+    --ink:#0a0a0a;
+    --paper:#ffffff;
+    --line:#111111;
+    --grid:#e6e6e6;
+    --red:#d81324;
+    --grey-1:#f4f4f4;
+    --grey-2:#dcdcdc;
+    --grey-3:#8f8f8f;
+    --panel-bg:#131313;
+    --panel-line:#2a2a2a;
+    --mono: ui-monospace, "SF Mono", "Consolas", "JetBrains Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;font-family:var(--sans);background:var(--ink);color:#eee;}
+  #app{display:grid;grid-template-columns:250px 1fr 300px;grid-template-rows:56px 1fr;height:100vh;}
+
+  /* HEADER */
+  header{
+    grid-column:1/4; grid-row:1;
+    display:flex; align-items:center; gap:16px;
+    background:var(--panel-bg); border-bottom:1px solid var(--panel-line);
+    padding:0 16px;
+  }
+  header .logo{display:flex;align-items:baseline;gap:8px;}
+  header .logo b{font-size:15px;letter-spacing:0.5px;}
+  header .logo span{font-size:11px;color:var(--grey-3);font-family:var(--mono);}
+  header .dims{display:flex;align-items:center;gap:8px;margin-left:12px;font-family:var(--mono);font-size:12px;color:var(--grey-3);}
+  header .dims input{
+    width:58px;background:#000;border:1px solid var(--panel-line);color:#eee;
+    padding:5px 6px;border-radius:3px;font-family:var(--mono);font-size:12px;
+  }
+  .people-toggle{
+    display:flex; align-items:center; gap:7px; margin-left:18px;
+    font-size:12px; color:var(--grey-3); cursor:pointer; user-select:none;
+  }
+  .people-toggle input{accent-color:var(--red); width:14px; height:14px; cursor:pointer;}
+  .people-toggle:hover{color:#ddd;}
+  header .spacer{flex:1;}
+  header .actions{display:flex;gap:8px;}
+  .btn{
+    background:#1c1c1c;border:1px solid var(--panel-line);color:#eee;
+    padding:7px 12px;border-radius:3px;font-size:12px;cursor:pointer;
+    font-family:var(--sans); white-space:nowrap;
+  }
+  .btn:hover{background:#262626;}
+  .btn.primary{background:var(--red);border-color:var(--red);}
+  .btn.primary:hover{background:#b90f1e;}
+  .btn:disabled{opacity:0.35;cursor:default;}
+
+  /* SIDEBAR LEFT — palette */
+  #palette{
+    grid-column:1; grid-row:2; overflow-y:auto;
+    background:var(--panel-bg); border-right:1px solid var(--panel-line);
+    padding:14px 12px 40px;
+  }
+  #palette h2{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--grey-3);margin:4px 0 10px;}
+  .pitem{
+    border:1px solid var(--panel-line); border-radius:4px; padding:8px 10px;
+    margin-bottom:8px; cursor:grab; background:#181818;
+    transition:border-color .15s, background .15s;
+  }
+  .pitem:hover{border-color:var(--red); background:#1e1414;}
+  .pitem:active{cursor:grabbing;}
+  .pitem .t{font-size:12.5px; font-weight:600;}
+  .pitem .w{font-size:11px; color:var(--grey-3); font-family:var(--mono); margin-top:2px;}
+  .pitem .tag{
+    display:inline-block; margin-top:5px; font-size:9.5px; padding:2px 5px;
+    border:1px solid var(--red); color:var(--red); border-radius:2px; letter-spacing:.3px;
+  }
+  .pitem .banner-toggle{
+    display:flex; align-items:center; gap:6px; margin-top:7px; font-size:11px;
+    color:var(--grey-3); cursor:pointer;
+  }
+  .pitem .banner-toggle input{accent-color:var(--red); width:13px; height:13px;}
+  .pitem .banner-toggle:hover{color:#ddd;}
+  #palette .hint{
+    font-size:11px; color:var(--grey-3); line-height:1.5; margin-top:18px;
+    border-top:1px solid var(--panel-line); padding-top:12px;
+  }
+
+  /* CANVAS */
+  #canvasWrap{
+    grid-column:2; grid-row:2; position:relative; overflow:auto;
+    background:#2b2b2b;
+    display:flex; align-items:center; justify-content:center;
+  }
+  #stage{ background:var(--paper); box-shadow:0 0 0 1px #000, 0 20px 50px rgba(0,0,0,.5); }
+  #stage3d{
+    display:none; position:absolute; inset:0;
+    background:var(--paper);
+    cursor:grab;
+  }
+  #stage3d.grabbing{ cursor:grabbing; }
+  #stage3d canvas{ display:block; width:100%; height:100%; touch-action:none; }
+  .orbit-hint{
+    display:none;
+    position:absolute; bottom:14px; right:14px; z-index:5;
+    background:rgba(17,17,17,.85); color:#ccc; font-size:11px; font-family:var(--mono);
+    padding:6px 10px; border-radius:5px; border:1px solid var(--panel-line); pointer-events:none;
+  }
+  .sel-badge-3d{
+    position:absolute; top:14px; left:14px; z-index:5;
+    background:#d81324; color:#fff; font-size:11px; font-weight:bold; letter-spacing:.3px;
+    font-family:var(--mono); padding:5px 10px; border-radius:3px; pointer-events:none;
+  }
+  .toolbar-float{
+    position:absolute; top:14px; left:14px; display:flex; gap:6px; z-index:5;
+  }
+  .toolbar-float .btn{background:#111;opacity:.92;}
+
+  /* VIEW TABS */
+  .view-tabs{
+    position:absolute; top:14px; left:50%; transform:translateX(-50%); z-index:6;
+    display:flex; gap:2px; background:#111; border:1px solid var(--panel-line);
+    border-radius:6px; padding:3px;
+  }
+  .view-tabs button{
+    background:transparent; border:none; color:#aaa; font-size:12px; font-weight:600;
+    padding:7px 14px; border-radius:4px; cursor:pointer; font-family:var(--sans);
+    letter-spacing:.2px;
+  }
+  .view-tabs button:hover{color:#fff;}
+  .view-tabs button.active{background:var(--red); color:#fff;}
+
+  /* LEGEND */
+  .legend{
+    position:absolute; bottom:14px; left:14px; z-index:5;
+    background:rgba(17,17,17,.94); border:1px solid var(--panel-line); border-radius:6px;
+    padding:10px 12px; font-size:11px; color:#ccc; line-height:1.9; max-width:230px;
+  }
+  .legend .lt{font-size:10px; text-transform:uppercase; letter-spacing:1px; color:var(--grey-3); margin-bottom:4px;}
+  .legend .li{display:flex; align-items:center; gap:7px;}
+  .legend .sw{width:12px; height:12px; border-radius:2px; flex:0 0 auto; display:inline-block;}
+  .legend .sw.front{background:#d81324;}
+  .legend .sw.side{background:#d81324; opacity:.75;}
+  .legend .sw.bb{background:#d81324; opacity:.55;}
+  .legend .sw.ban{background:#d81324; opacity:.3;}
+  .legend .sw.img{background:linear-gradient(135deg,#d81324 0 50%, #444 50% 100%);}
+  .legend .sw.staff{background:#2c3e50; border-radius:50%;}
+  .legend .sw.visitor{background:#7a8ba0; border-radius:50%;}
+
+  .view-caption{
+    position:absolute; top:60px; left:50%; transform:translateX(-50%); z-index:5;
+    font-family:var(--mono); font-size:11px; color:#999; letter-spacing:.5px; text-align:center;
+    background:rgba(255,255,255,.0);
+  }
+
+  /* SIDEBAR RIGHT — detail */
+  #detail{
+    grid-column:3; grid-row:2; overflow-y:auto;
+    background:var(--panel-bg); border-left:1px solid var(--panel-line);
+    padding:16px;
+  }
+  #detail h2{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--grey-3);margin:0 0 4px;}
+  #detail .subttl{font-size:14px;font-weight:700;margin-bottom:2px;}
+  #detail .meta{font-size:11px;color:var(--grey-3);font-family:var(--mono);margin-bottom:16px;}
+  .empty-hint{color:var(--grey-3); font-size:12.5px; line-height:1.6; margin-top:8px;}
+  .zone{
+    border:1px solid var(--panel-line); border-radius:5px; padding:10px; margin-bottom:12px; background:#161616;
+  }
+  .zone .zh{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;}
+  .zone .zh label{font-size:12.5px; font-weight:600; display:flex; align-items:center; gap:7px; cursor:pointer;}
+  .zone .zh input[type=checkbox]{accent-color:var(--red); width:14px;height:14px;}
+  .zone .zprev{
+    width:100%; aspect-ratio:var(--ar, 2/1); background:#0c0c0c repeating-linear-gradient(45deg,#1a1a1a,#1a1a1a 6px,#0c0c0c 6px,#0c0c0c 12px);
+    border:1px dashed var(--panel-line); border-radius:3px; overflow:hidden; position:relative;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .zone .zprev img{width:100%;height:100%;object-fit:cover; display:block;}
+  .zone .zprev .ph{font-size:10.5px; color:var(--grey-3); font-family:var(--mono);}
+  .zone .zctrls{display:flex; gap:6px; margin-top:8px;}
+  .zone .zctrls .btn{flex:1; font-size:11px; padding:6px 8px;}
+  .rowbtns{display:flex; gap:8px; margin-top:6px;}
+  .rowbtns .btn{flex:1;}
+  input[type=file]{display:none;}
+
+  ::-webkit-scrollbar{width:10px;height:10px;}
+  ::-webkit-scrollbar-thumb{background:#333;border-radius:5px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo"><b>STANDTEKENING</b><span>BAR VERHUUR — LAYOUT TOOL</span></div>
+    <div class="dims">
+      Stand&nbsp;breedte
+      <input id="standW" type="number" min="1" step="0.1" value="6"> m
+      &nbsp;×&nbsp;diepte
+      <input id="standD" type="number" min="1" step="0.1" value="4"> m
+    </div>
+    <label class="people-toggle" for="chkPeople">
+      <input type="checkbox" id="chkPeople"> Toon mensen
+    </label>
+    <div class="spacer"></div>
+    <div class="actions">
+      <button class="btn" id="btnNew">Nieuw</button>
+      <button class="btn" id="btnSave">Opslaan</button>
+      <button class="btn" id="btnLoad">Laden</button>
+      <input type="file" id="fileLoad" accept="application/json">
+      <button class="btn primary" id="btnExport">Exporteer PNG</button>
+    </div>
+  </header>
+
+  <aside id="palette">
+    <h2>Bar-onderdelen</h2>
+    <div id="paletteList"></div>
+    <div class="hint">Sleep een bar-onderdeel op de tekening. Klik op een geplaatst onderdeel om te verplaatsen, roteren of bedrukbare vlakken in te stellen.</div>
+  </aside>
+
+  <div id="canvasWrap">
+    <div class="toolbar-float">
+      <button class="btn" id="btnRotate" disabled>⟳ Roteer 90°</button>
+      <button class="btn" id="btnDelete" disabled>✕ Verwijder</button>
+    </div>
+    <div class="view-tabs">
+      <button data-view="top" class="active">Bovenaanzicht</button>
+      <button data-view="front">Vooraanzicht</button>
+      <button data-view="iso">3D</button>
+    </div>
+    <div class="view-caption" id="viewCaption">BOVENAANZICHT — gezien van boven, publiekszijde onderaan</div>
+    <svg id="stage" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div id="stage3d"></div>
+    <div class="sel-badge-3d" id="selBadge3d" style="display:none">GESELECTEERD</div>
+    <div class="orbit-hint" id="orbitHint">🖱️ sleep = draaien · scroll = zoomen</div>
+    <div class="legend">
+      <div class="lt">Legenda bedrukbare vlakken</div>
+      <div class="li"><span class="sw front"></span> Voorkant bedrukbaar</div>
+      <div class="li"><span class="sw side"></span> Zijkant bedrukbaar</div>
+      <div class="li"><span class="sw bb"></span> Backbar voorkant bedrukbaar</div>
+      <div class="li"><span class="sw ban"></span> Bovenbanner bedrukbaar</div>
+      <div class="li"><span class="sw img"></span> Met geüploade afbeelding</div>
+      <div class="li" id="legendStaff" style="display:none"><span class="sw staff"></span> Personeel</div>
+      <div class="li" id="legendVisitor" style="display:none"><span class="sw visitor"></span> Bezoeker</div>
+    </div>
+  </div>
+
+  <aside id="detail">
+    <h2>Details</h2>
+    <div id="detailBody"><div class="empty-hint">Selecteer een bar-onderdeel op de tekening om afmetingen te zien en bedrukbare vlakken (voorkant / bovenkant / backbar) in te stellen.</div></div>
+  </aside>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- constants (cm) ---------- */
+  const UNIT_W = 150;        // width per "bar" segment
+  const COUNTER_D = 80;      // bar counter depth
+  const COUNTER_H = 115;     // bar counter front height
+  const BACKBAR_D = 30;      // backbar depth
+  const BACKBAR_GAP_MIN = 80; // minimum werkruimte tussen frontbar en backbar
+  const BACKBAR_H = 210;     // backbar front height
+  const BANNER_POLE_H = 100; // hoogte stokken boven de bar
+  const BANNER_H = 50;       // hoogte van de banner zelf
+  const BANNER_W_RATIO = 0.9; // banner iets smaller dan de bar
+
+  const FINISHES = ["Zwart","Hout","Marmer","Kleur (LED)"];
+
+  function buildPalette(){
+    const items = [];
+    for(let n=1;n<=5;n++){
+      items.push({label:`${n} bar${n>1?'s':''}`, count:n, backbar:false, w:n*UNIT_W, banner:false});
+      items.push({label:`${n} bar${n>1?'s':''} met backbar`, count:n, backbar:true, w:n*UNIT_W, banner:false});
+    }
+    return items;
+  }
+  const PALETTE = buildPalette();
+
+  /* ---------- state ---------- */
+  let stand = { w: 600, d: 400 }; // cm
+  let bars = []; // {id,count,backbar,w,cx,cy,rot,front:{on,img},top:{on,img},bbfront:{on,img}}
+  let selectedId = null;
+  let idSeq = 1;
+  let scale = 1; // px per cm
+  let currentView = 'top'; // 'top' | 'front' | 'iso'
+  let showPeople = false;
+  const PERSON_H = 172;       // gemiddelde persoonshoogte
+  const PERSON_HEAD_R = 11;
+  const PERSON_SHOULDER_W = 46;
+  const PAD = 40; // px padding around stand in stage
+
+  /* ---------- DOM refs ---------- */
+  const svg = document.getElementById('stage');
+  const paletteList = document.getElementById('paletteList');
+  const detailBody = document.getElementById('detailBody');
+  const btnRotate = document.getElementById('btnRotate');
+  const btnDelete = document.getElementById('btnDelete');
+  const standWInput = document.getElementById('standW');
+  const standDInput = document.getElementById('standD');
+
+  const NS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs){
+    const e = document.createElementNS(NS, tag);
+    if(attrs) for(const k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  /* ---------- palette render ---------- */
+  function renderPalette(){
+    paletteList.innerHTML = "";
+    PALETTE.forEach((spec, idx)=>{
+      const d = document.createElement('div');
+      d.className = 'pitem';
+      d.draggable = true;
+      d.innerHTML = `<div class="t">${spec.label}</div><div class="w">${(spec.w/100).toFixed(1)} m breed</div>${spec.backbar?'<span class="tag">MET BACKBAR</span>':''}
+        <label class="banner-toggle"><input type="checkbox" ${spec.banner?'checked':''}> Met bovenbanner</label>`;
+      d.addEventListener('dragstart', e=>{
+        e.dataTransfer.setData('text/plain', String(idx));
+      });
+      const cb = d.querySelector('input[type=checkbox]');
+      cb.addEventListener('click', e=>e.stopPropagation());
+      cb.addEventListener('change', ()=>{ spec.banner = cb.checked; });
+      paletteList.appendChild(d);
+    });
+  }
+
+  /* ---------- geometry helpers ---------- */
+  function computeScale(){
+    const wrap = document.getElementById('canvasWrap');
+    const availW = wrap.clientWidth - 60;
+    const availH = wrap.clientHeight - 60;
+    scale = Math.min(availW / stand.w, availH / stand.d, 1.4);
+    scale = Math.max(scale, 0.12);
+  }
+
+  function stageSizePx(){
+    const extraBottom = showPeople ? 90*scale : 0;
+    return { w: stand.w*scale + PAD*2, h: stand.d*scale + PAD*2 + extraBottom };
+  }
+
+  function gapOf(bar){
+    return bar.gap || BACKBAR_GAP_MIN;
+  }
+
+  function footprint(bar){
+    const d = COUNTER_D + (bar.backbar ? gapOf(bar) + BACKBAR_D : 0);
+    return { w: bar.w, d: d };
+  }
+
+  function clampCenter(bar){
+    const fp = footprint(bar);
+    const rotated = (bar.rot % 180) !== 0;
+    const halfW = (rotated? fp.d : fp.w)/2;
+    const halfD = (rotated? fp.w : fp.d)/2;
+    bar.cx = Math.min(Math.max(bar.cx, halfW), stand.w - halfW);
+    bar.cy = Math.min(Math.max(bar.cy, halfD), stand.d - halfD);
+    if(stand.w - halfW < halfW) bar.cx = stand.w/2;
+    if(stand.d - halfD < halfD) bar.cy = stand.d/2;
+  }
+
+  // Rotates a local (u,v) offset by an SVG-style angle (matches the top
+  // view's rotate() transform), so a person placed "behind the counter"
+  // still ends up in the right spot when the bar itself is rotated.
+  function rotatePoint(u, v, rotDeg){
+    const rad = rotDeg*Math.PI/180;
+    const c = Math.cos(rad), s = Math.sin(rad);
+    return { dx: u*c - v*s, dy: u*s + v*c };
+  }
+
+  // One staff figure behind each bar (in the werkruimte if there's a
+  // backbar, otherwise just behind the counter if there's room), plus a
+  // couple of visitors near the public edge. Recomputed fresh each render
+  // so it always follows the current layout.
+  function getPeople(){
+    if(!showPeople) return [];
+    const people = [];
+    bars.forEach(bar=>{
+      const fp = footprint(bar);
+      const counterBackV = fp.d/2 - COUNTER_D;
+      const localV = counterBackV - 32;
+      const r = rotatePoint(0, localV, bar.rot);
+      const gx = bar.cx + r.dx, gy = bar.cy + r.dy;
+      if(gx > 15 && gx < stand.w-15 && gy > 15 && gy < stand.d-15){
+        people.push({ x: gx, y: gy, role: 'staff' });
+      }
+    });
+    [0.32, 0.68].forEach(f=>{
+      people.push({ x: stand.w*f, y: stand.d + 55, role: 'visitor' });
+    });
+    return people;
+  }
+
+
+  /* ---------- view tabs ---------- */
+  const CAPTIONS = {
+    top:   'BOVENAANZICHT — gezien van boven, publiekszijde onderaan',
+    front: 'VOORAANZICHT — gezien vanaf de publiekszijde',
+    iso:   '3D — sleep om te draaien, scroll om te zoomen'
+  };
+  document.querySelectorAll('.view-tabs button').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      currentView = btn.dataset.view;
+      document.querySelectorAll('.view-tabs button').forEach(b=>b.classList.toggle('active', b===btn));
+      document.getElementById('viewCaption').textContent = CAPTIONS[currentView];
+      render();
+    });
+  });
+
+  /* ---------- render stage (dispatcher) ---------- */
+  function render(){
+    if(currentView === 'top'){ hideThreeView(); renderTopView(); }
+    else if(currentView === 'front'){ hideThreeView(); renderFrontView(); }
+    else { showThreeView(); }
+    renderDetail();
+  }
+
+  function clearStage(w, h){
+    svg.setAttribute('width', w);
+    svg.setAttribute('height', h);
+    svg.innerHTML = "";
+    const root = el('g', {transform:`translate(${PAD},${PAD})`});
+    svg.appendChild(root);
+    return root;
+  }
+
+  /* ---------- TOP VIEW ---------- */
+  function renderTopView(){
+    computeScale();
+    const size = stageSizePx();
+    const root = clearStage(size.w, size.h);
+
+    // grid
+    const gridGroup = el('g');
+    const stepCm = 50;
+    root.appendChild(gridGroup);
+    for(let x=0; x<=stand.w; x+=stepCm){
+      gridGroup.appendChild(el('line',{x1:x*scale,y1:0,x2:x*scale,y2:stand.d*scale,stroke:'#ececec','stroke-width':1}));
+    }
+    for(let y=0; y<=stand.d; y+=stepCm){
+      gridGroup.appendChild(el('line',{x1:0,y1:y*scale,x2:stand.w*scale,y2:y*scale,stroke:'#ececec','stroke-width':1}));
+    }
+
+    // stand outline
+    root.appendChild(el('rect',{x:0,y:0,width:stand.w*scale,height:stand.d*scale,fill:'none',stroke:'#111','stroke-width':2}));
+
+    // dimension labels
+    const dimW = el('text',{x:stand.w*scale/2, y:-12, 'text-anchor':'middle','font-family':'ui-monospace,monospace','font-size':11,fill:'#111'});
+    dimW.textContent = `${(stand.w/100).toFixed(2)} m`;
+    root.appendChild(dimW);
+    const dimD = el('text',{x:-12, y:stand.d*scale/2, 'text-anchor':'middle','font-family':'ui-monospace,monospace','font-size':11,fill:'#111', transform:`rotate(-90 -12 ${stand.d*scale/2})`});
+    dimD.textContent = `${(stand.d/100).toFixed(2)} m`;
+    root.appendChild(dimD);
+
+    // "entree" hint along front edge (bottom)
+    const entree = el('text',{x:stand.w*scale/2, y:stand.d*scale+18, 'text-anchor':'middle','font-family':'ui-monospace,monospace','font-size':10,fill:'#999','letter-spacing':'1px'});
+    entree.textContent = 'PUBLIEKSZIJDE';
+    root.appendChild(entree);
+
+    // bars
+    bars.forEach(bar=>drawBarTop(root, bar));
+
+    // people (top-down: filled circle + small facing tick)
+    getPeople().forEach(p=>{
+      const px = p.x*scale, py = p.y*scale;
+      const isStaff = p.role === 'staff';
+      const r = Math.max(4, 9*Math.min(scale,1));
+      root.appendChild(el('circle',{cx:px,cy:py,r,fill:isStaff?'#2c3e50':'#7a8ba0','stroke':'#fff','stroke-width':1}));
+      const faceDy = isStaff ? r*1.6 : -r*1.6; // staff faces publiek (+y), visitor faces the stand (-y)
+      root.appendChild(el('line',{x1:px,y1:py,x2:px,y2:py+faceDy,stroke:isStaff?'#2c3e50':'#7a8ba0','stroke-width':1.5}));
+    });
+
+    // active snap guides (only present while dragging near a 1/4, 1/2 or 3/4 mark)
+    if(activeGuides.x !== null){
+      const gx = activeGuides.x*scale;
+      root.appendChild(el('line',{x1:gx,y1:-8,x2:gx,y2:stand.d*scale+8,stroke:'#d81324','stroke-width':1.5,'stroke-dasharray':'5,4'}));
+      const frac = activeGuides.x/stand.w;
+      const label = Math.abs(frac-0.5)<0.01 ? 'MIDDEN' : (frac<0.5 ? '1/4' : '3/4');
+      const t = el('text',{x:gx,y:-14,'text-anchor':'middle','font-family':'ui-monospace,monospace','font-size':9,fill:'#d81324','font-weight':'bold'});
+      t.textContent = label;
+      root.appendChild(t);
+    }
+    if(activeGuides.y !== null){
+      const gy = activeGuides.y*scale;
+      root.appendChild(el('line',{x1:-8,y1:gy,x2:stand.w*scale+8,y2:gy,stroke:'#d81324','stroke-width':1.5,'stroke-dasharray':'5,4'}));
+      const frac = activeGuides.y/stand.d;
+      const label = Math.abs(frac-0.5)<0.01 ? 'MIDDEN' : (frac<0.5 ? '1/4' : '3/4');
+      const t = el('text',{x:-14,y:gy,'text-anchor':'middle','dominant-baseline':'middle','font-family':'ui-monospace,monospace','font-size':9,fill:'#d81324','font-weight':'bold', transform:`rotate(-90 -14 ${gy})`});
+      t.textContent = label;
+      root.appendChild(t);
+    }
+  }
+
+  function drawBarTop(root, bar){
+    const fp = footprint(bar);
+    const g = el('g', {
+      transform:`translate(${bar.cx*scale},${bar.cy*scale}) rotate(${bar.rot})`,
+      'data-id': bar.id,
+      style:'cursor:pointer'
+    });
+
+    // backbar (drawn first = behind)
+    if(bar.backbar){
+      const bx = -bar.w/2*scale, by = -fp.d/2*scale;
+      const bw = bar.w*scale, bh = BACKBAR_D*scale;
+      const bbRect = el('rect',{x:bx,y:by,width:bw,height:bh,fill:'#fff',stroke:'#111','stroke-width':1.4,'stroke-dasharray':'4,2'});
+      g.appendChild(bbRect);
+      if(bar.bbfront.on){
+        const badge = frontBadge(bx, by, 'BB', bar.bbfront.img, bw);
+        g.appendChild(badge);
+      }
+
+      // werkruimte gap indicator
+      const gy = by + bh;
+      const gh = gapOf(bar)*scale;
+      g.appendChild(el('rect',{x:bx,y:gy,width:bw,height:gh,fill:'none',stroke:'#ccc','stroke-width':1,'stroke-dasharray':'2,3'}));
+      if(gh > 14){
+        const gt = el('text',{x:0,y:gy+gh/2,'text-anchor':'middle','dominant-baseline':'middle','font-family':'ui-monospace,monospace','font-size':8,fill:'#bbb'});
+        gt.textContent = `werkruimte ${(gapOf(bar)/100).toFixed(2)}m`;
+        g.appendChild(gt);
+      }
+    }
+
+    // counter rect (top view)
+    const cw = bar.w*scale, ch = COUNTER_D*scale;
+    const cx0 = -bar.w/2*scale;
+    const cyTop = bar.backbar ? (-fp.d/2 + BACKBAR_D + gapOf(bar))*scale : -COUNTER_D/2*scale;
+
+    const counterRect = el('rect',{x:cx0,y:cyTop,width:cw,height:ch,fill:'#fff',stroke:'#111','stroke-width':1.8});
+    g.appendChild(counterRect);
+
+    // front edge highlight (edge nearest publiek = max y of counter)
+    const frontY = cyTop+ch;
+    if(bar.front.on){
+      g.appendChild(el('line',{x1:cx0,y1:frontY,x2:cx0+cw,y2:frontY,stroke:'#d81324','stroke-width':4}));
+      g.appendChild(frontBadge(cx0, frontY-14, 'V', bar.front.img, cw));
+    }
+
+    // side edges (left + right kopse kanten of the counter)
+    if(bar.sideZone.on){
+      [cx0, cx0+cw].forEach(sx=>{
+        g.appendChild(el('line',{x1:sx,y1:cyTop,x2:sx,y2:cyTop+ch,stroke:'#d81324','stroke-width':4}));
+      });
+      const sideBadge = frontBadge(cx0-2, cyTop+ch/2-11, 'Z', bar.sideZone.img, 22);
+      g.appendChild(sideBadge);
+    }
+
+    // bovenbanner: two poles + badge, drawn centered over the counter
+    if(bar.banner){
+      const poleInset = cw*(1-BANNER_W_RATIO)/2;
+      [cx0+poleInset, cx0+cw-poleInset].forEach(px=>{
+        g.appendChild(el('circle',{cx:px, cy:cyTop+ch/2, r:3, fill:'#111'}));
+      });
+      g.appendChild(el('rect',{x:cx0+poleInset,y:cyTop-10,width:cw-poleInset*2,height:6,fill:'none',stroke:'#999','stroke-width':1,'stroke-dasharray':'2,2'}));
+      if(bar.bannerZone.on){
+        g.appendChild(frontBadge(cx0+cw-24, cyTop-16, 'BAN', bar.bannerZone.img, 22));
+      }
+    }
+
+    const label = el('text',{x:0,y:cyTop+ch/2, 'text-anchor':'middle','dominant-baseline':'middle','font-family':'ui-monospace,monospace','font-size':Math.max(9,10),fill:'#111','pointer-events':'none'});
+    label.textContent = `${bar.count}× (${(bar.w/100).toFixed(1)}m)`;
+    g.appendChild(label);
+
+    // selection outline
+    if(bar.id === selectedId){
+      const fw = fp.w*scale, fd = fp.d*scale;
+      g.appendChild(el('rect',{x:-fp.w/2*scale,y:-fp.d/2*scale,width:fw,height:fd,fill:'#d81324',opacity:'0.08'}));
+      g.appendChild(el('rect',{x:-fp.w/2*scale,y:-fp.d/2*scale,width:fw,height:fd,fill:'none',stroke:'#d81324','stroke-width':3,'stroke-dasharray':'8,4'}));
+      const tagW = 84, tagH = 18;
+      g.appendChild(el('rect',{x:-fp.w/2*scale, y:-fp.d/2*scale-tagH-4, width:tagW, height:tagH, fill:'#d81324', rx:3}));
+      const tagText = el('text',{x:-fp.w/2*scale+tagW/2, y:-fp.d/2*scale-tagH-4+tagH/2+1, 'text-anchor':'middle','dominant-baseline':'middle','font-size':9.5,'font-family':'ui-monospace,monospace',fill:'#fff','font-weight':'bold'});
+      tagText.textContent = 'GESELECTEERD';
+      g.appendChild(tagText);
+    }
+
+    // interactions
+    g.addEventListener('pointerdown', (ev)=>startDrag(ev, bar));
+    g.addEventListener('click', (ev)=>{ ev.stopPropagation(); selectBar(bar.id); });
+
+    root.appendChild(g);
+  }
+
+  function frontBadge(x, y, letter, img, widthPx){
+    const gg = el('g');
+    const bx = x + 4, by = y - (letter==='V'? 14 : 0);
+    if(letter==='V'){
+      gg.appendChild(el('circle',{cx:x+widthPx/2, cy:y, r:8, fill:'#d81324'}));
+      const t = el('text',{x:x+widthPx/2,y:y+1,'text-anchor':'middle','dominant-baseline':'middle','font-size':9,'font-family':'ui-monospace,monospace',fill:'#fff','font-weight':'bold'});
+      t.textContent = letter;
+      gg.appendChild(t);
+    } else {
+      gg.appendChild(el('circle',{cx:x+10, cy:y+9, r:8, fill:'#d81324'}));
+      const t = el('text',{x:x+10,y:y+10,'text-anchor':'middle','dominant-baseline':'middle','font-size':8,'font-family':'ui-monospace,monospace',fill:'#fff','font-weight':'bold'});
+      t.textContent = letter;
+      gg.appendChild(t);
+    }
+    return gg;
+  }
+
+  /* ---------- FRONT VIEW (elevation, publiekszijde) ---------- */
+  function frontEffWidth(bar){
+    // width of the bar's silhouette as seen from the front
+    return (bar.rot % 180 === 0) ? bar.w : footprint(bar).d;
+  }
+
+  function barFrontHeight(bar){
+    const backH = bar.backbar ? BACKBAR_H : 0;
+    const bannerH = bar.banner ? COUNTER_H + BANNER_POLE_H + BANNER_H : COUNTER_H;
+    return Math.max(backH, bannerH);
+  }
+
+  function renderFrontView(){
+    const maxH = Math.max(bars.length ? Math.max(...bars.map(barFrontHeight)) : COUNTER_H, showPeople ? PERSON_H+15 : 0);
+    const wrap = document.getElementById('canvasWrap');
+    const availW = wrap.clientWidth - 60, availH = wrap.clientHeight - 140;
+    let fScale = Math.min(availW/stand.w, availH/(maxH+40), 1.6);
+    fScale = Math.max(fScale, 0.15);
+    scale = fScale;
+
+    const w = stand.w*fScale + PAD*2;
+    const h = maxH*fScale + PAD*2 + 40;
+    const root = clearStage(w, h);
+    const baseline = maxH*fScale + 10; // floor line y
+
+    // ground line + width dimension
+    root.appendChild(el('line',{x1:0,y1:baseline,x2:stand.w*fScale,y2:baseline,stroke:'#111','stroke-width':2}));
+    const dimW = el('text',{x:stand.w*fScale/2, y:baseline+22, 'text-anchor':'middle','font-family':'ui-monospace,monospace','font-size':11,fill:'#111'});
+    dimW.textContent = `${(stand.w/100).toFixed(2)} m breed`;
+    root.appendChild(dimW);
+    const dimH = el('text',{x:-10, y:baseline-maxH*fScale/2, 'text-anchor':'middle','font-family':'ui-monospace,monospace','font-size':10,fill:'#999', transform:`rotate(-90 -10 ${baseline-maxH*fScale/2})`});
+    dimH.textContent = `max ${(maxH/100).toFixed(2)} m hoog`;
+    root.appendChild(dimH);
+
+    // sort back-to-front (further back drawn first)
+    const ordered = [...bars].sort((a,b)=>a.cy-b.cy);
+
+    const people = getPeople();
+    // staff drawn first, so the counter in front visually occludes their legs
+    people.filter(p=>p.role==='staff').forEach(p=>drawPersonFront(root, p, baseline, fScale));
+
+    ordered.forEach(bar=>{
+      const ew = frontEffWidth(bar)*fScale;
+      const cx = bar.cx*fScale;
+      const x0 = cx - ew/2;
+      const canTexture = (bar.rot % 180 === 0);
+
+      if(bar.backbar){
+        const bh = BACKBAR_H*fScale;
+        const by0 = baseline - bh;
+        drawFrontPanel(root, x0, by0, ew, bh, bar.bbfront, canTexture, `${bar.count}× backbar`);
+      }
+      const chh = COUNTER_H*fScale;
+      const cy0 = baseline - chh;
+      drawFrontPanel(root, x0, cy0, ew, chh, bar.front, canTexture, `${bar.count}× (${(bar.w/100).toFixed(1)}m)`);
+
+      if(bar.sideZone.on){
+        const stripW = Math.min(18, ew*0.15);
+        drawFrontPanel(root, x0, cy0, stripW, chh, bar.sideZone, canTexture, '');
+        drawFrontPanel(root, x0+ew-stripW, cy0, stripW, chh, bar.sideZone, canTexture, '');
+      }
+
+      if(bar.banner){
+        const bw = ew*BANNER_W_RATIO, bx0 = cx - bw/2;
+        const poleTopY = baseline - (COUNTER_H+BANNER_POLE_H)*fScale;
+        const poleBottomY = cy0;
+        [bx0+bw*0.08, bx0+bw*0.92].forEach(px=>{
+          root.appendChild(el('line',{x1:px,y1:poleBottomY,x2:px,y2:poleTopY,stroke:'#333','stroke-width':3}));
+        });
+        const bannerH = BANNER_H*fScale;
+        drawFrontPanel(root, bx0, poleTopY-bannerH, bw, bannerH, bar.bannerZone, canTexture, 'bovenbanner');
+      }
+
+      const totalH = barFrontHeight(bar);
+      if(bar.id === selectedId){
+        const selH = totalH*fScale;
+        root.appendChild(el('rect',{x:x0-4,y:baseline-selH-4,width:ew+8,height:selH+8,fill:'#d81324',opacity:'0.08'}));
+        root.appendChild(el('rect',{x:x0-4,y:baseline-selH-4,width:ew+8,height:selH+8,fill:'none',stroke:'#d81324','stroke-width':3,'stroke-dasharray':'8,4'}));
+        const tagW = 84, tagH = 18;
+        root.appendChild(el('rect',{x:x0-4, y:baseline-selH-4-tagH-4, width:tagW, height:tagH, fill:'#d81324', rx:3}));
+        const tagText = el('text',{x:x0-4+tagW/2, y:baseline-selH-4-tagH-4+tagH/2+1, 'text-anchor':'middle','dominant-baseline':'middle','font-size':9.5,'font-family':'ui-monospace,monospace',fill:'#fff','font-weight':'bold'});
+        tagText.textContent = 'GESELECTEERD';
+        root.appendChild(tagText);
+      }
+
+      const hitH = totalH * fScale;
+      const hit = el('rect',{x:x0,y:baseline-hitH,width:ew,height:hitH,fill:'transparent',style:'cursor:pointer'});
+      hit.addEventListener('click', (ev)=>{ ev.stopPropagation(); selectBar(bar.id); });
+      root.appendChild(hit);
+    });
+
+    people.filter(p=>p.role==='visitor').forEach(p=>drawPersonFront(root, p, baseline, fScale));
+
+    const entree = el('text',{x:stand.w*fScale/2, y:baseline+38, 'text-anchor':'middle','font-family':'ui-monospace,monospace','font-size':10,fill:'#999','letter-spacing':'1px'});
+    entree.textContent = 'PUBLIEKSZIJDE →  jij kijkt de stand in';
+    root.appendChild(entree);
+  }
+
+  function drawPersonFront(root, p, baseline, fScale){
+    const cx = p.x*fScale;
+    const color = p.role === 'staff' ? '#2c3e50' : '#7a8ba0';
+    const headR = PERSON_HEAD_R*fScale;
+    const shoulderW = PERSON_SHOULDER_W*fScale;
+    const bodyH = (PERSON_H - PERSON_HEAD_R*2)*fScale;
+    const headCy = baseline - PERSON_H*fScale + headR;
+    root.appendChild(el('circle',{cx, cy:headCy, r:headR, fill:color}));
+    const bodyTop = headCy+headR;
+    root.appendChild(el('path',{
+      d:`M ${cx-shoulderW*0.32} ${baseline} L ${cx-shoulderW/2} ${bodyTop} Q ${cx} ${bodyTop-headR*0.3} ${cx+shoulderW/2} ${bodyTop} L ${cx+shoulderW*0.32} ${baseline} Z`,
+      fill:color
+    }));
+  }
+
+  function drawFrontPanel(root, x, y, w, h, zone, canTexture, fallbackLabel){
+    const g = el('g');
+    let fill = '#fff';
+    if(zone.on) fill = '#f2f2f2';
+    const rect = el('rect',{x,y,width:w,height:h, fill, stroke:'#111','stroke-width':1.8});
+    g.appendChild(rect);
+    if(zone.on && zone.img && canTexture){
+      const clipId = 'fclip-'+Math.random().toString(36).slice(2);
+      const clip = el('clipPath',{id:clipId});
+      clip.appendChild(el('rect',{x,y,width:w,height:h}));
+      g.appendChild(clip);
+      g.appendChild(el('image',{x,y,width:w,height:h,href:zone.img,preserveAspectRatio:'xMidYMid slice','clip-path':`url(#${clipId})`}));
+      g.appendChild(el('rect',{x,y,width:w,height:h,fill:'none',stroke:'#111','stroke-width':1.8}));
+    } else if(zone.on){
+      g.appendChild(el('text',{x:x+w/2,y:y+h/2,'text-anchor':'middle','dominant-baseline':'middle','font-size':9,'font-family':'ui-monospace,monospace',fill:'#999'}))
+        .textContent = zone.img && !canTexture ? 'afbeelding: zie bovenaanzicht (bar gedraaid)' : 'bedrukbaar';
+    }
+    if(zone.on){
+      g.appendChild(el('rect',{x,y,width:w,height:h,fill:'none',stroke:'#d81324','stroke-width':3}));
+    }
+    if(!zone.on){
+      const t = el('text',{x:x+w/2,y:y+h/2,'text-anchor':'middle','dominant-baseline':'middle','font-size':9,'font-family':'ui-monospace,monospace',fill:'#bbb'});
+      t.textContent = fallbackLabel;
+      g.appendChild(t);
+    }
+    root.appendChild(g);
+  }
+
+  /* ---------- 3D (real WebGL scene via three.js, orbit + zoom) ---------- */
+  const stage3d = document.getElementById('stage3d');
+  const orbitHint = document.getElementById('orbitHint');
+  let three = null; // lazily initialized on first visit to the 3D tab
+
+  function initThree(){
+    if(three || typeof THREE === 'undefined') return;
+    const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false });
+    renderer.setClearColor(0xffffff, 1);
+    stage3d.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(42, 1, 1, 20000);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+    const dir1 = new THREE.DirectionalLight(0xffffff, 0.55);
+    dir1.position.set(300, 600, 400);
+    scene.add(dir1);
+    const dir2 = new THREE.DirectionalLight(0xffffff, 0.25);
+    dir2.position.set(-300, 200, -400);
+    scene.add(dir2);
+
+    const barsGroup = new THREE.Group();
+    scene.add(barsGroup);
+    const floorGroup = new THREE.Group();
+    scene.add(floorGroup);
+    const peopleGroup = new THREE.Group();
+    scene.add(peopleGroup);
+
+    // ---- orbit controls (hand-rolled: drag to orbit, wheel/pinch to zoom) ----
+    const target = new THREE.Vector3(0,0,0);
+    let radius = 900, theta = -0.7, phi = 1.05; // spherical: azimuth, polar (from +Y)
+    const PHI_MIN = 0.12, PHI_MAX = Math.PI - 0.12;
+
+    function applyCamera(){
+      const sinPhi = Math.sin(phi);
+      camera.position.set(
+        target.x + radius * sinPhi * Math.sin(theta),
+        target.y + radius * Math.cos(phi),
+        target.z + radius * sinPhi * Math.cos(theta)
+      );
+      camera.lookAt(target);
+    }
+    applyCamera();
+
+    let dragging = false, lastX = 0, lastY = 0, downX = 0, downY = 0, downTime = 0, pinchDist = 0;
+    const dom = renderer.domElement;
+
+    function pointerDown(x, y){
+      dragging = true; lastX = x; lastY = y; downX = x; downY = y; downTime = Date.now();
+      stage3d.classList.add('grabbing');
+    }
+    function pointerMove(x, y){
+      if(!dragging) return;
+      const dx = x - lastX, dy = y - lastY;
+      lastX = x; lastY = y;
+      theta -= dx * 0.008;
+      phi = Math.min(PHI_MAX, Math.max(PHI_MIN, phi - dy * 0.008));
+      applyCamera();
+      requestRender();
+    }
+    function pointerUp(x, y){
+      dragging = false;
+      stage3d.classList.remove('grabbing');
+      const moved = Math.hypot(x-downX, y-downY);
+      if(moved < 5 && Date.now()-downTime < 500){
+        handleClick(downX, downY);
+      }
+    }
+    function zoomBy(factor){
+      radius = Math.min(4000, Math.max(150, radius*factor));
+      applyCamera();
+      requestRender();
+    }
+
+    dom.addEventListener('mousedown', e=>{ pointerDown(e.clientX, e.clientY); });
+    window.addEventListener('mousemove', e=>{ pointerMove(e.clientX, e.clientY); });
+    window.addEventListener('mouseup', e=>{ if(dragging) pointerUp(e.clientX, e.clientY); });
+    dom.addEventListener('wheel', e=>{ e.preventDefault(); zoomBy(1 + e.deltaY*0.0015); }, {passive:false});
+
+    dom.addEventListener('touchstart', e=>{
+      if(e.touches.length===1){ pointerDown(e.touches[0].clientX, e.touches[0].clientY); }
+      else if(e.touches.length===2){ pinchDist = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY); dragging=false; }
+    }, {passive:true});
+    dom.addEventListener('touchmove', e=>{
+      if(e.touches.length===1 && dragging){ pointerMove(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }
+      else if(e.touches.length===2){
+        const d = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+        if(pinchDist>0) zoomBy(1 - (d-pinchDist)*0.003);
+        pinchDist = d;
+        e.preventDefault();
+      }
+    }, {passive:false});
+    dom.addEventListener('touchend', e=>{
+      if(e.touches.length===0){ pointerUp(lastX, lastY); pinchDist=0; }
+    }, {passive:true});
+
+    // ---- click-to-select via raycasting ----
+    const raycaster = new THREE.Raycaster();
+    function handleClick(clientX, clientY){
+      const rect = dom.getBoundingClientRect();
+      const ndc = new THREE.Vector2(
+        ((clientX-rect.left)/rect.width)*2-1,
+        -((clientY-rect.top)/rect.height)*2+1
+      );
+      raycaster.setFromCamera(ndc, camera);
+      const hitboxes = barsGroup.children.flatMap(g=>g.userData.hitbox ? [g.userData.hitbox] : []);
+      const hits = raycaster.intersectObjects(hitboxes, false);
+      if(hits.length){
+        selectBar(hits[0].object.userData.barId);
+      } else {
+        selectBar(null);
+      }
+    }
+
+    // ---- render loop (only redraws when needed) ----
+    let renderQueued = false;
+    function requestRender(){
+      if(renderQueued) return;
+      renderQueued = true;
+      requestAnimationFrame(()=>{ renderQueued = false; renderer.render(scene, camera); });
+    }
+
+    function resize(){
+      const w = stage3d.clientWidth, h = stage3d.clientHeight;
+      if(w<2 || h<2) return;
+      renderer.setSize(w, h, false);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+      camera.aspect = w/h;
+      camera.updateProjectionMatrix();
+      requestRender();
+    }
+    new ResizeObserver(resize).observe(stage3d);
+
+    three = { renderer, scene, camera, barsGroup, floorGroup, peopleGroup, applyCamera, requestRender, resize, target,
+      setRadius:(r)=>{ radius=r; applyCamera(); } };
+    resize();
+  }
+
+  const textureCache = new Map();
+  function loadTexture(dataUrl){
+    if(!dataUrl) return null;
+    if(textureCache.has(dataUrl)) return textureCache.get(dataUrl);
+    const tex = new THREE.TextureLoader().load(dataUrl, ()=>{ if(three) three.requestRender(); });
+    tex.colorSpace = THREE.SRGBColorSpace || tex.colorSpace;
+    textureCache.set(dataUrl, tex);
+    return tex;
+  }
+
+  // BoxGeometry face-group order is [+X, -X, +Y, -Y, +Z, -Z].
+  // Local convention per bar: +Z = front (publieksrichting), +Y = up.
+  function boxMaterials({ frontImg, frontOn, sideImg, sideOn, baseColor }){
+    const plain = (on)=> new THREE.MeshLambertMaterial({ color: on ? 0xf6d9db : baseColor });
+    const textured = (img, on)=> (on && img)
+      ? new THREE.MeshLambertMaterial({ map: loadTexture(img), color: 0xffffff })
+      : plain(on);
+    const sideMat = sideOn ? textured(sideImg, sideOn) : new THREE.MeshLambertMaterial({ color: baseColor });
+    return [
+      sideMat, sideMat,                              // +X, -X (kopse kanten)
+      new THREE.MeshLambertMaterial({ color: baseColor }), // +Y top (not printable)
+      new THREE.MeshLambertMaterial({ color: 0xd8d8d8 }), // -Y bottom (unseen, cheap)
+      textured(frontImg, frontOn),                   // +Z front
+      new THREE.MeshLambertMaterial({ color: 0xe6e6e6 }), // -Z back
+    ];
+  }
+
+  function addEdges(mesh, color){
+    const edges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(mesh.geometry),
+      new THREE.LineBasicMaterial({ color: color||0x111111 })
+    );
+    mesh.add(edges);
+  }
+
+  function buildBarObject3D(bar){
+    const group = new THREE.Group();
+    const fp = footprint(bar);
+    const frontV = fp.d/2;
+    const counterBackV = frontV - COUNTER_D;
+
+    // counter
+    const counterGeo = new THREE.BoxGeometry(bar.w, COUNTER_H, COUNTER_D);
+    const counterMesh = new THREE.Mesh(counterGeo, boxMaterials({
+      frontImg: bar.front.img, frontOn: bar.front.on,
+      sideImg: bar.sideZone.img, sideOn: bar.sideZone.on,
+      baseColor: 0xffffff
+    }));
+    counterMesh.position.set(0, COUNTER_H/2, frontV - COUNTER_D/2);
+    addEdges(counterMesh);
+    group.add(counterMesh);
+
+    let maxH = COUNTER_H;
+
+    if(bar.backbar){
+      const gap = gapOf(bar);
+      const bbFrontV = counterBackV - gap;
+      const bbGeo = new THREE.BoxGeometry(bar.w, BACKBAR_H, BACKBAR_D);
+      const bbMesh = new THREE.Mesh(bbGeo, boxMaterials({
+        frontImg: bar.bbfront.img, frontOn: bar.bbfront.on,
+        baseColor: 0xe2e2e2
+      }));
+      bbMesh.position.set(0, BACKBAR_H/2, bbFrontV - BACKBAR_D/2);
+      addEdges(bbMesh);
+      group.add(bbMesh);
+      maxH = Math.max(maxH, BACKBAR_H);
+    }
+
+    if(bar.banner){
+      const bw = bar.w * BANNER_W_RATIO;
+      const poleMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+      [-bw/2+6, bw/2-6].forEach(px=>{
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(2.2,2.2,BANNER_POLE_H,8), poleMat);
+        pole.position.set(px, COUNTER_H + BANNER_POLE_H/2, frontV);
+        group.add(pole);
+      });
+      const bannerGeo = new THREE.BoxGeometry(bw, BANNER_H, 5);
+      const bannerMesh = new THREE.Mesh(bannerGeo, boxMaterials({
+        frontImg: bar.bannerZone.img, frontOn: bar.bannerZone.on,
+        baseColor: 0xffffff
+      }));
+      bannerMesh.position.set(0, COUNTER_H + BANNER_POLE_H + BANNER_H/2, frontV);
+      addEdges(bannerMesh);
+      group.add(bannerMesh);
+      maxH = Math.max(maxH, COUNTER_H + BANNER_POLE_H + BANNER_H);
+    }
+
+    // invisible hitbox for raycasting + selection outline, spans the whole footprint
+    const hitGeo = new THREE.BoxGeometry(bar.w, maxH, fp.d);
+    const hitMesh = new THREE.Mesh(hitGeo, new THREE.MeshBasicMaterial({ visible:false }));
+    hitMesh.position.set(0, maxH/2, frontV - fp.d/2);
+    hitMesh.userData.barId = bar.id;
+    group.add(hitMesh);
+    group.userData.hitbox = hitMesh;
+    group.userData.footprintH = maxH;
+
+    if(bar.id === selectedId){
+      const padW = bar.w+12, padH = maxH+12, padD = fp.d+12;
+      const outline = new THREE.LineSegments(
+        new THREE.EdgesGeometry(new THREE.BoxGeometry(padW, padH, padD)),
+        new THREE.LineBasicMaterial({ color:0xd81324, linewidth:2 })
+      );
+      outline.position.copy(hitMesh.position);
+      group.add(outline);
+      const tint = new THREE.Mesh(
+        new THREE.BoxGeometry(padW, padH, padD),
+        new THREE.MeshBasicMaterial({ color:0xd81324, transparent:true, opacity:0.05, depthWrite:false })
+      );
+      tint.position.copy(hitMesh.position);
+      group.add(tint);
+    }
+
+    return group;
+  }
+
+  function disposeObject3D(obj){
+    // Note: textures are intentionally NOT disposed here - they're cached
+    // and reused by data URL across rebuilds (see loadTexture/textureCache),
+    // so disposing them here would break that cache on the next rebuild.
+    obj.traverse(node=>{
+      if(node.geometry) node.geometry.dispose();
+      if(node.material){
+        const mats = Array.isArray(node.material) ? node.material : [node.material];
+        mats.forEach(m=>m.dispose());
+      }
+    });
+  }
+
+  // Simple, schematic low-poly person: sphere head + capsule/cylinder body,
+  // at real scale (~172cm). Staff (dark navy) face into the stand/publiek;
+  // visitors (soft grey-blue) face the bar. Real THREE.Group + rotation, so
+  // it automatically works with the orbit camera - no special-casing needed.
+  function buildPerson3D(p){
+    const group = new THREE.Group();
+    const color = p.role === 'staff' ? 0x2c3e50 : 0x7a8ba0;
+    const mat = new THREE.MeshLambertMaterial({ color });
+    const headR = PERSON_HEAD_R;
+    const bodyH = PERSON_H - headR*2;
+    const bodyGeo = (THREE.CapsuleGeometry)
+      ? new THREE.CapsuleGeometry(PERSON_SHOULDER_W/2*0.62, bodyH*0.72, 4, 8)
+      : new THREE.CylinderGeometry(PERSON_SHOULDER_W/2*0.62, PERSON_SHOULDER_W/2*0.42, bodyH, 10);
+    const body = new THREE.Mesh(bodyGeo, mat);
+    body.position.y = bodyH/2;
+    group.add(body);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(headR, 12, 10), mat);
+    head.position.y = bodyH + headR;
+    group.add(head);
+    group.position.set(p.x - stand.w/2, 0, p.y - stand.d/2);
+    group.rotation.y = (p.role === 'staff' ? 0 : Math.PI); // face the direction matching the 2D views
+    return group;
+  }
+
+  function updateThreeScene(){
+    if(!three) return;
+    const { barsGroup, floorGroup, peopleGroup } = three;
+
+    while(barsGroup.children.length){ const c=barsGroup.children[0]; barsGroup.remove(c); disposeObject3D(c); }
+    while(floorGroup.children.length){ const c=floorGroup.children[0]; floorGroup.remove(c); disposeObject3D(c); }
+    while(peopleGroup.children.length){ const c=peopleGroup.children[0]; peopleGroup.remove(c); disposeObject3D(c); }
+
+    // floor, centered under the stand, X = width, Z = depth (Y up)
+    const floorGeo = new THREE.PlaneGeometry(stand.w, stand.d);
+    const floorMesh = new THREE.Mesh(floorGeo, new THREE.MeshLambertMaterial({ color:0xfafafa, side: THREE.DoubleSide }));
+    floorMesh.rotation.x = -Math.PI/2;
+    floorGroup.add(floorMesh);
+    const grid = new THREE.GridHelper(Math.max(stand.w,stand.d), Math.round(Math.max(stand.w,stand.d)/50), 0xdddddd, 0xeeeeee);
+    grid.position.y = 0.2;
+    floorGroup.add(grid);
+    const edge = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.PlaneGeometry(stand.w, stand.d)),
+      new THREE.LineBasicMaterial({ color:0x999999 })
+    );
+    edge.rotation.x = -Math.PI/2;
+    edge.position.y = 0.3;
+    floorGroup.add(edge);
+
+    bars.forEach(bar=>{
+      const obj = buildBarObject3D(bar);
+      obj.position.set(bar.cx - stand.w/2, 0, bar.cy - stand.d/2);
+      obj.rotation.y = -bar.rot * Math.PI/180;
+      three.barsGroup.add(obj);
+    });
+
+    getPeople().forEach(p=>{
+      peopleGroup.add(buildPerson3D(p));
+    });
+
+    document.getElementById('selBadge3d').style.display = (selectedId!==null) ? 'block' : 'none';
+
+    // frame camera target roughly at stand center, keep user's chosen radius/angle
+    three.target.set(0, bars.length ? 60 : 40, 0);
+    three.applyCamera();
+    three.requestRender();
+  }
+
+  function showThreeView(){
+    initThree();
+    document.getElementById('stage').style.display = 'none';
+    stage3d.style.display = 'block';
+    if(!three){
+      orbitHint.style.display = 'none';
+      stage3d.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;padding:40px;text-align:center;color:#888;font-family:var(--sans);font-size:13px;line-height:1.6;">
+        De 3D-weergave kon niet laden (vereist een internetverbinding om eenmalig een 3D-bibliotheek op te halen).<br>Controleer je verbinding en probeer het opnieuw, of gebruik ondertussen Bovenaanzicht / Vooraanzicht.
+      </div>`;
+      return;
+    }
+    orbitHint.style.display = 'block';
+    requestAnimationFrame(()=>{ if(three){ three.resize(); updateThreeScene(); } });
+  }
+  function hideThreeView(){
+    stage3d.style.display = 'none';
+    orbitHint.style.display = 'none';
+    document.getElementById('selBadge3d').style.display = 'none';
+    document.getElementById('stage').style.display = 'block';
+  }
+
+  /* ---------- drag / drop from palette ---------- */
+  const wrapEl = document.getElementById('canvasWrap');
+  wrapEl.addEventListener('dragover', e=>e.preventDefault());
+  wrapEl.addEventListener('drop', e=>{
+    e.preventDefault();
+    const idx = e.dataTransfer.getData('text/plain');
+    if(idx === "") return;
+    const spec = PALETTE[parseInt(idx,10)];
+    if(!spec) return;
+    const rect = svg.getBoundingClientRect();
+    const px = e.clientX - rect.left - PAD;
+    const cx = px/scale;
+    addBar(spec, cx);
+  });
+
+  function addBar(spec, cx){
+    const { cy, gap } = autoPlacement(spec);
+    const bar = {
+      id: idSeq++,
+      count: spec.count,
+      backbar: spec.backbar,
+      banner: spec.banner,
+      w: spec.w,
+      gap: gap,
+      cx: cx, cy: cy, rot: 0,
+      front: {on:false, img:null},
+      sideZone: {on:false, img:null},
+      bbfront: {on:false, img:null},
+      bannerZone: {on:false, img:null}
+    };
+    clampCenter(bar);
+    bars.push(bar);
+    selectBar(bar.id);
+  }
+
+  // Places a new bar as far toward the public (front) edge as possible.
+  // If it has a backbar, stretches the werkruimte gap so the backbar lands
+  // flush against the back wall of the stand, filling the depth optimally
+  // (never less than the 80cm minimum werkruimte).
+  function autoPlacement(spec){
+    let gap = BACKBAR_GAP_MIN;
+    let totalD = COUNTER_D;
+    if(spec.backbar){
+      const fillGap = stand.d - COUNTER_D - BACKBAR_D;
+      gap = Math.max(BACKBAR_GAP_MIN, fillGap);
+      totalD = COUNTER_D + gap + BACKBAR_D;
+    }
+    // front edge of the counter flush with the public edge (y = stand.d);
+    // if totalD exceeds stand.d, this simply centers as far forward as fits.
+    let cy = stand.d - totalD/2;
+    if(totalD > stand.d) cy = stand.d/2;
+    return { cy, gap };
+  }
+
+  /* ---------- moving placed bars ---------- */
+  let dragState = null;
+  let activeGuides = { x: null, y: null }; // stand-space cm positions of snap lines currently engaged
+  const SNAP_PX = 10; // snap catch radius in screen pixels
+
+  function snapValue(value, fractionsOf, scalePx){
+    const catchCm = SNAP_PX / scalePx;
+    const targets = [fractionsOf*0.25, fractionsOf*0.5, fractionsOf*0.75];
+    let best = null, bestDist = catchCm;
+    targets.forEach(t=>{
+      const dist = Math.abs(value - t);
+      if(dist <= bestDist){ best = t; bestDist = dist; }
+    });
+    return best; // null if nothing within catch radius
+  }
+
+  function startDrag(ev, bar){
+    ev.stopPropagation();
+    selectBar(bar.id);
+    const rect = svg.getBoundingClientRect();
+    dragState = {
+      id: bar.id,
+      offX: (ev.clientX - rect.left - PAD)/scale - bar.cx,
+      offY: (ev.clientY - rect.top - PAD)/scale - bar.cy
+    };
+    window.addEventListener('pointermove', onDragMove);
+    window.addEventListener('pointerup', onDragUp);
+  }
+  function onDragMove(ev){
+    if(!dragState) return;
+    const bar = bars.find(b=>b.id===dragState.id);
+    if(!bar) return;
+    const rect = svg.getBoundingClientRect();
+    let cx = (ev.clientX - rect.left - PAD)/scale - dragState.offX;
+    let cy = (ev.clientY - rect.top - PAD)/scale - dragState.offY;
+
+    const snapX = snapValue(cx, stand.w, scale);
+    const snapY = snapValue(cy, stand.d, scale);
+    if(snapX !== null) cx = snapX;
+    if(snapY !== null) cy = snapY;
+    activeGuides = { x: snapX, y: snapY };
+
+    bar.cx = cx; bar.cy = cy;
+    clampCenter(bar);
+    render();
+  }
+  function onDragUp(){
+    dragState = null;
+    activeGuides = { x: null, y: null };
+    window.removeEventListener('pointermove', onDragMove);
+    window.removeEventListener('pointerup', onDragUp);
+    render();
+  }
+
+  svg.addEventListener('click', ()=>selectBar(null));
+
+  /* ---------- selection / toolbar ---------- */
+  function selectBar(id){
+    selectedId = id;
+    btnRotate.disabled = id===null;
+    btnDelete.disabled = id===null;
+    render();
+  }
+
+  btnRotate.addEventListener('click', ()=>{
+    const bar = bars.find(b=>b.id===selectedId);
+    if(!bar) return;
+    bar.rot = (bar.rot + 90) % 360;
+    clampCenter(bar);
+    render();
+  });
+  btnDelete.addEventListener('click', ()=>{
+    bars = bars.filter(b=>b.id!==selectedId);
+    selectedId = null;
+    selectBar(null);
+  });
+
+  /* ---------- detail panel ---------- */
+  function renderDetail(){
+    const bar = bars.find(b=>b.id===selectedId);
+    if(!bar){
+      detailBody.innerHTML = `<div class="empty-hint">Selecteer een bar-onderdeel op de tekening om afmetingen te zien en bedrukbare vlakken (voorkant / zijkant / backbar / banner) in te stellen.</div>`;
+      return;
+    }
+    detailBody.innerHTML = `
+      <div class="subttl">${bar.count} bar${bar.count>1?'s':''}${bar.backbar? ' met backbar':''}${bar.banner? ' + bovenbanner':''}</div>
+      <div class="meta">${(bar.w/100).toFixed(1)} m breed · ${COUNTER_D} cm diep · ${COUNTER_H} cm hoog${bar.backbar? ` · ${gapOf(bar)} cm werkruimte · backbar ${BACKBAR_D} cm diep, ${BACKBAR_H} cm hoog`:''}${bar.banner? ` · banner op ${BANNER_POLE_H} cm boven de bar, ${BANNER_H} cm hoog`:''}</div>
+
+      <div class="zone" data-zone="front">
+        <div class="zh">
+          <label><input type="checkbox" id="chkFront" ${bar.front.on?'checked':''}> Voorkant bedrukbaar</label>
+        </div>
+        <div class="zprev" id="prevFront" style="--ar:${(bar.w/COUNTER_H).toFixed(2)}">
+          ${bar.front.img? `<img src="${bar.front.img}">` : `<span class="ph">${(bar.w/100).toFixed(1)} × ${(COUNTER_H/100).toFixed(2)} m</span>`}
+        </div>
+        <div class="zctrls">
+          <button class="btn" id="btnUploadFront">Afbeelding uploaden</button>
+          <button class="btn" id="btnClearFront">Wissen</button>
+        </div>
+        <input type="file" id="fileFront" accept="image/*">
+      </div>
+
+      <div class="zone" data-zone="sideZone">
+        <div class="zh">
+          <label><input type="checkbox" id="chkSide" ${bar.sideZone.on?'checked':''}> Zijkant bedrukbaar</label>
+        </div>
+        <div class="zprev" id="prevSide" style="--ar:${(COUNTER_D/COUNTER_H).toFixed(2)}">
+          ${bar.sideZone.img? `<img src="${bar.sideZone.img}">` : `<span class="ph">${(COUNTER_D/100).toFixed(2)} × ${(COUNTER_H/100).toFixed(2)} m — beide kopse kanten</span>`}
+        </div>
+        <div class="zctrls">
+          <button class="btn" id="btnUploadSide">Afbeelding uploaden</button>
+          <button class="btn" id="btnClearSide">Wissen</button>
+        </div>
+        <input type="file" id="fileSide" accept="image/*">
+      </div>
+
+      ${bar.backbar ? `
+      <div class="zone" data-zone="bbfront">
+        <div class="zh">
+          <label><input type="checkbox" id="chkBB" ${bar.bbfront.on?'checked':''}> Backbar voorkant bedrukbaar</label>
+        </div>
+        <div class="zprev" id="prevBB" style="--ar:${(bar.w/BACKBAR_H).toFixed(2)}">
+          ${bar.bbfront.img? `<img src="${bar.bbfront.img}">` : `<span class="ph">${(bar.w/100).toFixed(1)} × ${(BACKBAR_H/100).toFixed(2)} m</span>`}
+        </div>
+        <div class="zctrls">
+          <button class="btn" id="btnUploadBB">Afbeelding uploaden</button>
+          <button class="btn" id="btnClearBB">Wissen</button>
+        </div>
+        <input type="file" id="fileBB" accept="image/*">
+      </div>` : ''}
+
+      ${bar.banner ? `
+      <div class="zone" data-zone="banner">
+        <div class="zh">
+          <label><input type="checkbox" id="chkBanner" ${bar.bannerZone.on?'checked':''}> Bovenbanner bedrukbaar</label>
+        </div>
+        <div class="zprev" id="prevBanner" style="--ar:${((bar.w*BANNER_W_RATIO)/BANNER_H).toFixed(2)}">
+          ${bar.bannerZone.img? `<img src="${bar.bannerZone.img}">` : `<span class="ph">${(bar.w*BANNER_W_RATIO/100).toFixed(1)} × ${(BANNER_H/100).toFixed(2)} m</span>`}
+        </div>
+        <div class="zctrls">
+          <button class="btn" id="btnUploadBanner">Afbeelding uploaden</button>
+          <button class="btn" id="btnClearBanner">Wissen</button>
+        </div>
+        <input type="file" id="fileBanner" accept="image/*">
+      </div>` : ''}
+    `;
+
+    wireZone('front', bar);
+    wireZone('sideZone', bar);
+    if(bar.backbar) wireZone('bbfront', bar);
+    if(bar.banner) wireZone('bannerZone', bar);
+  }
+
+  function wireZone(key, bar){
+    const map = {front:{chk:'chkFront',file:'fileFront',btn:'btnUploadFront',clr:'btnClearFront'},
+                 sideZone:{chk:'chkSide',file:'fileSide',btn:'btnUploadSide',clr:'btnClearSide'},
+                 bbfront:{chk:'chkBB',file:'fileBB',btn:'btnUploadBB',clr:'btnClearBB'},
+                 bannerZone:{chk:'chkBanner',file:'fileBanner',btn:'btnUploadBanner',clr:'btnClearBanner'}};
+    const ids = map[key];
+    const chk = document.getElementById(ids.chk);
+    const fileInput = document.getElementById(ids.file);
+    const btn = document.getElementById(ids.btn);
+    const clr = document.getElementById(ids.clr);
+    chk.addEventListener('change', ()=>{ bar[key].on = chk.checked; render(); });
+    btn.addEventListener('click', ()=>fileInput.click());
+    fileInput.addEventListener('change', ()=>{
+      const f = fileInput.files[0];
+      if(!f) return;
+      const reader = new FileReader();
+      reader.onload = ()=>{ bar[key].img = reader.result; bar[key].on = true; render(); };
+      reader.readAsDataURL(f);
+    });
+    clr.addEventListener('click', ()=>{ bar[key].img = null; render(); });
+  }
+
+  /* ---------- header controls ---------- */
+  document.getElementById('chkPeople').addEventListener('change', (e)=>{
+    showPeople = e.target.checked;
+    document.getElementById('legendStaff').style.display = showPeople ? 'flex' : 'none';
+    document.getElementById('legendVisitor').style.display = showPeople ? 'flex' : 'none';
+    render();
+  });
+
+  standWInput.addEventListener('change', ()=>{
+    stand.w = Math.max(50, parseFloat(standWInput.value||'6')*100);
+    bars.forEach(clampCenter);
+    render();
+  });
+  standDInput.addEventListener('change', ()=>{
+    stand.d = Math.max(50, parseFloat(standDInput.value||'4')*100);
+    bars.forEach(clampCenter);
+    render();
+  });
+
+  document.getElementById('btnNew').addEventListener('click', ()=>{
+    if(bars.length && !confirm('Nieuw project starten? Niet-opgeslagen wijzigingen gaan verloren.')) return;
+    bars = []; selectedId = null; selectBar(null); render();
+  });
+
+  document.getElementById('btnSave').addEventListener('click', ()=>{
+    const data = JSON.stringify({stand, bars}, null, 0);
+    const blob = new Blob([data], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'standtekening.json';
+    a.click();
+  });
+
+  document.getElementById('btnLoad').addEventListener('click', ()=>{
+    document.getElementById('fileLoad').click();
+  });
+  document.getElementById('fileLoad').addEventListener('change', (e)=>{
+    const f = e.target.files[0];
+    if(!f) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      try{
+        const data = JSON.parse(reader.result);
+        stand = data.stand; bars = data.bars || [];
+        bars.forEach(b=>{
+          if(b.gap == null) b.gap = BACKBAR_GAP_MIN;
+          if(b.banner == null) b.banner = false;
+          if(!b.bannerZone) b.bannerZone = {on:false, img:null};
+          if(!b.sideZone) b.sideZone = {on:false, img:null};
+        });
+        idSeq = bars.reduce((m,b)=>Math.max(m,b.id+1), 1);
+        standWInput.value = (stand.w/100).toFixed(2);
+        standDInput.value = (stand.d/100).toFixed(2);
+        selectedId = null; selectBar(null); render();
+      }catch(err){ alert('Kon bestand niet laden: ongeldig formaat.'); }
+    };
+    reader.readAsText(f);
+  });
+
+  document.getElementById('btnExport').addEventListener('click', ()=>{
+    if(currentView === 'iso'){
+      if(!three) return;
+      const wasSelected = selectedId;
+      selectedId = null; updateThreeScene();
+      three.renderer.render(three.scene, three.camera);
+      three.renderer.domElement.toBlob(blob=>{
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'standtekening-3d.png';
+        a.click();
+        selectedId = wasSelected; updateThreeScene();
+      });
+      return;
+    }
+    const wasSelected = selectedId;
+    selectedId = null; render(); // clean export, no selection outline
+    const xml = new XMLSerializer().serializeToString(svg);
+    const svgBlob = new Blob([xml], {type:'image/svg+xml;charset=utf-8'});
+    const url = URL.createObjectURL(svgBlob);
+    const img = new Image();
+    img.onload = ()=>{
+      const canvas = document.createElement('canvas');
+      const scaleFactor = 2;
+      canvas.width = svg.width.baseVal.value*scaleFactor;
+      canvas.height = svg.height.baseVal.value*scaleFactor;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.scale(scaleFactor, scaleFactor);
+      ctx.drawImage(img,0,0);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(blob=>{
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'standtekening.png';
+        a.click();
+      });
+      selectedId = wasSelected; render();
+    };
+    img.src = url;
+  });
+
+  window.addEventListener('resize', render);
+
+  /* ---------- init ---------- */
+  renderPalette();
+  render();
+})();
+</script>
+</body>
+</html>
